@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JARVIS // GESTURE INTERFACE</title>
+    
+    <!-- Futuristic Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    
+    <!-- STANDARD LIBRARIES (No Modules) - Works locally in Chrome -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        :root {
+            --primary-color: #00f3ff;
+            --secondary-color: #0066ff;
+            --alert-color: #ff3333;
+            --bg-color: #020204;
+            --glass-bg: rgba(0, 20, 40, 0.3);
+            --glass-border: rgba(0, 243, 255, 0.3);
+            --hud-font: 'Share Tech Mono', monospace;
+            --header-font: 'Orbitron', sans-serif;
+        }
+
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: var(--bg-color); 
+            font-family: var(--hud-font);
+            color: var(--primary-color);
+        }
+
+        canvas { 
+            display: block; 
+            position: absolute; 
+            top: 0; 
+            left: 0; 
+            z-index: 1; 
+        }
+
+        /* --- HUD LAYOUT --- */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            pointer-events: none;
+            background: radial-gradient(circle at center, transparent 60%, #000 150%);
+            box-sizing: border-box;
+            padding: 20px;
+        }
+
+        /* Scanline Effect */
+        #ui-layer::before {
+            content: " ";
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            z-index: 2;
+            background-size: 100% 2px, 3px 100%;
+            pointer-events: none;
+        }
+
+        /* Header */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            padding: 20px;
+            text-transform: uppercase;
+        }
+
+        .brand-container {
+            border-left: 4px solid var(--primary-color);
+            padding-left: 15px;
+        }
+
+        h1 {
+            font-family: var(--header-font);
+            font-size: 2.5rem;
+            margin: 0;
+            letter-spacing: 4px;
+            text-shadow: 0 0 10px var(--primary-color);
+            background: linear-gradient(90deg, #fff, var(--primary-color));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .subtitle {
+            font-size: 0.9rem;
+            opacity: 0.8;
+            letter-spacing: 2px;
+        }
+
+        /* Status Panel */
+        .panel {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            backdrop-filter: blur(4px);
+            padding: 20px;
+            margin-bottom: 15px;
+            position: relative;
+            clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+            pointer-events: auto;
+        }
+
+        .panel::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 20px;
+            height: 20px;
+            border-bottom: 2px solid var(--primary-color);
+            border-right: 2px solid var(--primary-color);
+        }
+
+        #status-panel {
+            position: absolute;
+            top: 120px;
+            left: 40px;
+            width: 300px;
+        }
+
+        h3 {
+            font-family: var(--header-font);
+            margin-top: 0;
+            border-bottom: 1px solid var(--glass-border);
+            padding-bottom: 5px;
+            margin-bottom: 15px;
+            font-size: 1rem;
+            letter-spacing: 2px;
+        }
+
+        .status-item {
+            margin: 8px 0;
+            display: flex;
+            align-items: center;
+        }
+
+        .status-label {
+            width: 30px;
+            font-size: 1.2rem;
+            text-align: center;
+            margin-right: 10px;
+        }
+
+        .status-text {
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        #current-mode {
+            font-weight: bold;
+            color: #fff;
+            text-shadow: 0 0 8px var(--primary-color);
+        }
+
+        #error-msg {
+            color: var(--alert-color);
+            font-size: 0.8rem;
+            margin-top: 10px;
+        }
+
+        /* Video Feed */
+        #video-wrapper {
+            position: absolute;
+            bottom: 150px;
+            right: 40px;
+            width: 200px;
+            padding: 5px;
+            border: 1px solid var(--glass-border);
+            background: rgba(0,0,0,0.5);
+        }
+        
+        #video-container {
+            width: 100%;
+            height: 150px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+            opacity: 0.8;
+            filter: grayscale(100%) contrast(120%);
+        }
+
+        .cam-overlay {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            border: 1px solid rgba(255,255,255,0.1);
+            background: linear-gradient(rgba(0,255,0,0.1) 1px, transparent 1px);
+            background-size: 100% 20px;
+            pointer-events: none;
+        }
+
+        /* Founder Display */
+        #founder-display {
+            position: absolute;
+            bottom: 30px;
+            left: 0;
+            width: 100%;
+            text-align: center;
+            z-index: 20;
+            pointer-events: none;
+        }
+
+        .founder-label {
+            display: block;
+            font-family: var(--hud-font);
+            font-size: 0.9rem;
+            letter-spacing: 6px;
+            color: var(--primary-color);
+            margin-bottom: 5px;
+            opacity: 0.8;
+        }
+
+        .founder-name {
+            font-family: var(--header-font);
+            font-size: 2rem;
+            font-weight: 700;
+            letter-spacing: 10px;
+            color: #fff;
+            text-shadow: 0 0 20px var(--secondary-color), 0 0 40px var(--primary-color);
+            background: linear-gradient(180deg, #fff 40%, rgba(255,255,255,0) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-transform: uppercase;
+        }
+
+        /* Animations */
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
+        .blink { animation: blink 2s infinite; }
+
+        .loading-bar {
+            width: 0%;
+            height: 2px;
+            background: var(--primary-color);
+            transition: width 0.5s;
+            margin-top: 5px;
+            box-shadow: 0 0 10px var(--primary-color);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- UI Overlay -->
+    <div id="ui-layer">
+        <header>
+            <div class="brand-container">
+                <h1>JARVIS</h1>
+                <div class="subtitle">HOLOGRAPHIC INTERFACE V4.2</div>
+            </div>
+            <div style="text-align: right; opacity: 0.7;">
+                <div>SYS.TIME</div>
+                <div id="clock">00:00:00</div>
+            </div>
+        </header>
+
+        <!-- Left Status Panel -->
+        <div id="status-panel" class="panel">
+            <h3>Gesture Protocols</h3>
+            <div class="status-item"><span class="status-label">🖐</span> <span class="status-text">Open Hand: Sphere</span></div>
+            <div class="status-item"><span class="status-label">☝️</span> <span class="status-text">1 Finger: Heart</span></div>
+            <div class="status-item"><span class="status-label">✌️</span> <span class="status-text">2 Fingers: Saturn</span></div>
+            <div class="status-item"><span class="status-label">🤟</span> <span class="status-text">3 Fingers: Flower</span></div>
+            <div class="status-item"><span class="status-label">✊</span> <span class="status-text">Fist: Chaos Mode</span></div>
+            
+            <div style="margin-top: 20px;">
+                <div style="font-size: 0.8rem; color: #888;">CURRENT STATUS</div>
+                <div id="current-mode">INITIALIZING...</div>
+            </div>
+            <div id="loading-bar" class="loading-bar"></div>
+            <div id="error-msg"></div>
+        </div>
+
+        <!-- Founder Display -->
+        <div id="founder-display">
+            <span class="founder-label">FOUNDER & ARCHITECT</span>
+            <div class="founder-name">AJAJ PINJARI</div>
+        </div>
+
+        <!-- Video Wrapper -->
+        <div id="video-wrapper">
+            <div style="font-size: 0.7rem; margin-bottom: 5px; display:flex; justify-content:space-between;">
+                <span>VISUAL SENSOR INPUT</span>
+                <span class="blink" style="color:var(--alert-color)">REC</span>
+            </div>
+            <div id="video-container">
+                <div class="cam-overlay"></div>
+                <video id="input_video" autoplay playsinline></video>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- CLOCK ---
+        setInterval(() => {
+            const now = new Date();
+            document.getElementById('clock').innerText = now.toLocaleTimeString();
+        }, 1000);
+
+        // --- DOM ELEMENTS ---
+        const modeEl = document.getElementById('current-mode');
+        const loadBar = document.getElementById('loading-bar');
+        const errorEl = document.getElementById('error-msg');
+        
+        function log(msg) {
+            console.log(`[JARVIS] ${msg}`);
+            if (msg.includes("Error") || msg.includes("Failed")) {
+                 errorEl.innerText = msg;
+            }
+        }
+
+        // --- GLOBAL VARIABLES ---
+        let scene, camera, renderer, particles, gridHelper;
+        let pinchStrength = 1.0;
+        let handX = 0, handY = 0;
+        
+        const PARTICLE_COUNT = 15000;
+        const positions = new Float32Array(PARTICLE_COUNT * 3);
+        const targetPositions = new Float32Array(PARTICLE_COUNT * 3);
+        const colors = new Float32Array(PARTICLE_COUNT * 3);
+        const geometry = new THREE.BufferGeometry(); // THREE is global now
+        
+        const COLORS = { 
+            HEART: new THREE.Color(0xff0055),
+            SATURN: new THREE.Color(0xffd700),
+            FLOWER: new THREE.Color(0x9900ff),
+            SPHERE: new THREE.Color(0x00f3ff),
+            CHAOS: new THREE.Color(0xffffff)
+        };
+        
+        let currentShape = 'SPHERE';
+        let targetColor = COLORS.SPHERE;
+
+        // --- INITIALIZATION ---
+        window.onload = function() {
+            log("System Boot...");
+            loadBar.style.width = "50%";
+            
+            // 1. Initialize Visuals (Three.js)
+            try {
+                initThreeJS();
+                log("Visual Core Online.");
+                loadBar.style.width = "80%";
+            } catch (e) {
+                log("Error: Visual Core Failed.");
+                console.error(e);
+            }
+
+            // 2. Initialize Camera/AI (MediaPipe)
+            try {
+                if (window.Hands && window.Camera) {
+                    startCamera();
+                } else {
+                    log("Error: Neural Modules not loaded.");
+                    activateMouseFallback();
+                }
+            } catch (e) {
+                log("Error: AI Module Failure.");
+                console.error(e);
+                activateMouseFallback();
+            }
+        };
+
+        function activateMouseFallback() {
+            loadBar.style.width = "100%";
+            setTimeout(() => { loadBar.style.opacity = "0"; }, 500);
+            modeEl.innerText = "MODE: MANUAL OVERRIDE (MOUSE)";
+            window.addEventListener('mousemove', (e) => {
+                handX = (e.clientX / window.innerWidth - 0.5) * 2;
+                handY = -(e.clientY / window.innerHeight - 0.5) * 2;
+            });
+        }
+
+        function initThreeJS() {
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x020204, 0.02);
+            
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 30;
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            document.body.appendChild(renderer.domElement);
+
+            // Grid
+            gridHelper = new THREE.GridHelper(200, 50, 0x00f3ff, 0x111111);
+            gridHelper.position.y = -20;
+            scene.add(gridHelper);
+
+            // Particles Init
+            for (let i = 0; i < PARTICLE_COUNT * 3; i++) {
+                positions[i] = (Math.random() - 0.5) * 100;
+                targetPositions[i] = positions[i];
+                colors[i] = 1;
+            }
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            
+            // Simple disc texture created programmatically to avoid CORS on image loading
+            const canvas = document.createElement('canvas');
+            canvas.width = 32; canvas.height = 32;
+            const context = canvas.getContext('2d');
+            const grad = context.createRadialGradient(16, 16, 0, 16, 16, 16);
+            grad.addColorStop(0, 'rgba(255,255,255,1)');
+            grad.addColorStop(1, 'rgba(0,0,0,0)');
+            context.fillStyle = grad;
+            context.fillRect(0, 0, 32, 32);
+            const texture = new THREE.CanvasTexture(canvas);
+
+            const material = new THREE.PointsMaterial({ 
+                size: 0.35, 
+                map: texture,
+                vertexColors: true, 
+                blending: THREE.AdditiveBlending, 
+                depthTest: false,
+                transparent: true, 
+                opacity: 0.9 
+            });
+            
+            particles = new THREE.Points(geometry, material);
+            scene.add(particles);
+
+            setShape('SPHERE');
+            animate();
+            
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+        }
+
+        function setShape(shape) {
+            if (currentShape === shape) return;
+            currentShape = shape;
+            
+            modeEl.innerHTML = `MODE: <span style="color:${targetColor.getStyle()}">${shape}</span>`;
+            
+            let func;
+            if (shape === 'HEART') { targetColor = COLORS.HEART; func = (i) => {
+                const t = (i/PARTICLE_COUNT)*Math.PI*2; 
+                let x = 16*Math.pow(Math.sin(t),3); 
+                let y = 13*Math.cos(t)-5*Math.cos(2*t)-2*Math.cos(3*t)-Math.cos(4*t); 
+                return {x:x*0.8, y:y*0.8, z:(Math.random()-0.5)*4}; 
+            }}
+            else if (shape === 'SATURN') { targetColor = COLORS.SATURN; func = (i) => {
+                if (i > PARTICLE_COUNT*0.7) { 
+                    const a = (i/PARTICLE_COUNT)*60; const r = 14+Math.random()*4; 
+                    return {x:r*Math.cos(a), y:(Math.random()-0.5), z:r*Math.sin(a)}; 
+                }
+                const phi = Math.acos(-1+(2*i)/(PARTICLE_COUNT*0.7)); const theta = Math.sqrt(PARTICLE_COUNT*Math.PI)*phi; 
+                return {x:8*Math.cos(theta)*Math.sin(phi), y:8*Math.sin(theta)*Math.sin(phi), z:8*Math.cos(phi)};
+            }}
+            else if (shape === 'FLOWER') { targetColor = COLORS.FLOWER; func = (i) => {
+                 const u = (i/PARTICLE_COUNT)*Math.PI*8; const v = Math.random()*Math.PI; const r = 8*Math.sin(3*u);
+                 return {x:r*Math.cos(u)*Math.sin(v), y:r*Math.sin(u)*Math.sin(v), z:8*Math.cos(v)*Math.cos(3*u)*0.5};
+            }}
+            else if (shape === 'CHAOS') { targetColor = COLORS.CHAOS; func = () => ({x:(Math.random()-0.5)*50, y:(Math.random()-0.5)*50, z:(Math.random()-0.5)*50}); }
+            else { targetColor = COLORS.SPHERE; func = (i) => {
+                const phi = Math.acos(-1+(2*i)/PARTICLE_COUNT); const theta = Math.sqrt(PARTICLE_COUNT*Math.PI)*phi;
+                return {x:10*Math.cos(theta)*Math.sin(phi), y:10*Math.sin(theta)*Math.sin(phi), z:10*Math.cos(phi)};
+            }}
+
+            for(let i=0; i<PARTICLE_COUNT; i++) {
+                const p = func(i);
+                targetPositions[i*3] = p.x; targetPositions[i*3+1] = p.y; targetPositions[i*3+2] = p.z;
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            particles.rotation.y += 0.002 + (handX * 0.02);
+            particles.rotation.x += 0.001 + (handY * 0.02);
+            gridHelper.rotation.y += 0.0005;
+
+            const pos = geometry.attributes.position.array;
+            const col = geometry.attributes.color.array;
+
+            for(let i=0; i<PARTICLE_COUNT; i++) {
+                const ix = i*3;
+                let tx = targetPositions[ix] * pinchStrength;
+                let ty = targetPositions[ix+1] * pinchStrength;
+                let tz = targetPositions[ix+2] * pinchStrength;
+
+                pos[ix] += (tx - pos[ix]) * 0.08;
+                pos[ix+1] += (ty - pos[ix+1]) * 0.08;
+                pos[ix+2] += (tz - pos[ix+2]) * 0.08;
+
+                col[ix] += (targetColor.r - col[ix]) * 0.05;
+                col[ix+1] += (targetColor.g - col[ix+1]) * 0.05;
+                col[ix+2] += (targetColor.b - col[ix+2]) * 0.05;
+            }
+            geometry.attributes.position.needsUpdate = true;
+            geometry.attributes.color.needsUpdate = true;
+            renderer.render(scene, camera);
+        }
+
+        function startCamera() {
+            const videoElement = document.getElementById('input_video');
+            
+            const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+            hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+            
+            hands.onResults(results => {
+                if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                    const lm = results.multiHandLandmarks[0];
+                    handX = (lm[9].x - 0.5) * 2; 
+                    handY = -(lm[9].y - 0.5) * 2;
+                    
+                    const dist = Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y);
+                    pinchStrength = dist < 0.05 ? 1.5 : 1.0;
+
+                    const isUp = (tip, pip) => lm[tip].y < lm[pip].y;
+                    let count = 0;
+                    if (isUp(8,6)) count++; if (isUp(12,10)) count++; if (isUp(16,14)) count++; if (isUp(20,18)) count++;
+
+                    if (count === 0) setShape('CHAOS');
+                    else if (count === 1) setShape('HEART');
+                    else if (count === 2) setShape('SATURN');
+                    else if (count === 3) setShape('FLOWER');
+                    else setShape('SPHERE');
+                }
+            });
+
+            const cam = new Camera(videoElement, {
+                onFrame: async () => { await hands.send({image: videoElement}); },
+                width: 640, height: 480
+            });
+            
+            cam.start()
+                .then(() => { 
+                    log("Camera Online.");
+                    loadBar.style.width = "100%";
+                    setTimeout(() => { loadBar.style.opacity = "0"; }, 500);
+                })
+                .catch(err => { 
+                    log("Camera Blocked/Error.");
+                    activateMouseFallback();
+                });
+        }
+    </script>
+</body>
+</html>
